@@ -5167,36 +5167,45 @@ function enterManualCropMode(event) {
                 });
             }
 
-
-
-// --- END OF NEW FUNCTIONS ---
-            // --- Initial Load ---
-       // ==========================================
-    // START: AUTOMATION ENGINE (Paste this at the bottom)
+// ==========================================
+    // START: AUTOMATION ENGINE (Dynamic Version)
     // ==========================================
 
     // 1. Map subjects to your GitHub file paths
-    // Make sure the filename matches EXACTLY what you uploaded to GitHub (case sensitive!)
-const SubjectFiles = {
-    'Biology': 'https://raw.githubusercontent.com/MrRamirez123/Staar-mastery/main/assets/pdfs/biologyallquestions.pdf', 
-};
+    // Add your RAW GitHub links here. If a subject doesn't have a link yet, set it to null.
+    const SubjectFiles = {
+        'Biology': 'https://raw.githubusercontent.com/MrRamirez123/Staar-mastery/main/assets/pdfs/biologyallquestions.pdf', 
+        'Algebra 1': null,    // Placeholder: Add link when ready
+        'English 1': null,    // Placeholder: Add link when ready
+        'English 2': null,    // Placeholder: Add link when ready
+        'U.S. History': null  // Placeholder: Add link when ready
+    };
 
     /**
-     * Downloads and processes the PDF automatically.
+     * Downloads and processes the PDF automatically from a URL.
      */
     async function loadRemotePDF(url) {
+        console.log("🚀 [Auto-Load] Starting download for:", url);
         const statusDiv = document.getElementById('status');
-        statusDiv.innerHTML = '<div class="flex items-center justify-center"><div class="loader mr-2"></div>Downloading Exam Data...</div>';
+        statusDiv.innerHTML = '<div class="flex items-center justify-center"><div class="loader mr-2"></div>Downloading Exam Data from GitHub...</div>';
 
         try {
             const response = await fetch(url);
+            console.log("📡 [Auto-Load] Response status:", response.status);
+            
             if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
             
             const arrayBuffer = await response.arrayBuffer();
-            
-            // Use existing logic to process the data
+            console.log("📦 [Auto-Load] File downloaded. Size:", arrayBuffer.byteLength);
+
+            // Get the current subject data container
             const subjectData = getCurrentSubjectData();
+            
+            // Process the PDF using PDF.js
             subjectData.pdfDoc = await pdfjsLib.getDocument(arrayBuffer).promise;
+            console.log("📄 [Auto-Load] PDF Loaded into PDF.js");
+
+            // Parse Data
             subjectData.teksToRcMap = await buildTeksToRcMap(subjectData.pdfDoc);
             subjectData.allQuestions = await parseAllPages();
 
@@ -5206,41 +5215,55 @@ const SubjectFiles = {
             }
             statusDiv.innerHTML = statusMessage;
 
+            // Refresh UI
             updateReviewAllButton();
             renderDashboard();
             populateCustomFilters();
             saveState();
+            console.log("✅ [Auto-Load] Process Complete.");
 
         } catch (error) {
-            console.error("Auto-load failed:", error);
+            console.error("❌ [Auto-Load] Failed:", error);
             statusDiv.innerHTML = `<span class="text-red-600 font-bold">Error loading exam file: ${error.message}</span>`;
         }
     }
 
     /**
-     * NEW SWITCH SUBJECT: Triggers auto-load if data is missing.
+     * SWITCH SUBJECT: Handles switching via dropdown.
+     * Logic: 
+     * 1. Change State. 
+     * 2. If URL exists -> Auto Load. 
+     * 3. If no URL -> Show standard view (manual upload).
      */
     function switchSubject(subjectName) {
+        console.log("🔄 [Switch] Switching to:", subjectName);
         AppState.currentSubject = subjectName;
+        
+        // Clear the file input visually
         const fileInput = document.getElementById('pdf-upload');
         if(fileInput) fileInput.value = ''; 
         
-        // Check if we need to load data
         const subjectData = getCurrentSubjectData();
-        if (subjectData.allQuestions.length === 0 && SubjectFiles[subjectName]) {
-            // Data is missing, try to auto-load
-            loadRemotePDF(SubjectFiles[subjectName]);
+        const remoteUrl = SubjectFiles[subjectName];
+
+        // LOGIC CHECK:
+        // If we have NO questions loaded AND we have a valid URL -> Auto Load
+        if (subjectData.allQuestions.length === 0 && remoteUrl) {
+            console.log("⚡ [Switch] URL found. Triggering Auto-Load.");
+            loadRemotePDF(remoteUrl);
         } else {
-            // Data exists or no auto-file known, just render
+            // Otherwise, just render what we have (or the empty placeholder)
+            console.log("ℹ️ [Switch] No URL or data already exists. Rendering view.");
             renderAppForCurrentSubject();
         }
         saveState();
     }
 
-    // --- NEW STARTUP SEQUENCE ---
-    loadState();
+    // --- STARTUP SEQUENCE ---
+    console.log("🏁 [Startup] initializing...");
+    loadState(); // Load user's last session from memory (e.g., they might be on Algebra 1)
     
-    // Render the dropdown
+    // Render the dropdown with the correct selection
     const sDropdown = document.getElementById('subject-dropdown');
     if (sDropdown) {
         sDropdown.innerHTML = '';
@@ -5253,15 +5276,21 @@ const SubjectFiles = {
         });
     }
 
-    // Trigger the initial load logic
+    // Trigger Initial Load Logic based on the stored subject
     const currentData = getCurrentSubjectData();
-    if (currentData.allQuestions.length === 0 && SubjectFiles[AppState.currentSubject]) {
-        // If empty, fetch the PDF immediately
-        loadRemotePDF(SubjectFiles[AppState.currentSubject]);
+    const currentUrl = SubjectFiles[AppState.currentSubject];
+
+    console.log(`📊 [Startup] Subject: ${AppState.currentSubject}`);
+
+    if (currentData.allQuestions.length === 0 && currentUrl) {
+        console.log("🚀 [Startup] Triggering Auto-Load for saved subject...");
+        loadRemotePDF(currentUrl);
     } else {
-        // If data exists (from local storage), just show it
+        console.log("✅ [Startup] Rendering existing data or waiting for manual upload.");
         renderAppForCurrentSubject();
     }
+
+
 function renderResultsScreen() {
     // 1. TRAFFIC COP: Switch the view
     try {
