@@ -5135,12 +5135,7 @@ function enterManualCropMode(event) {
                 return AppState.subjects[AppState.currentSubject];
             }
 
-            function switchSubject(subjectName) {
-                AppState.currentSubject = subjectName;
-                fileInput.value = ''; // Clear file input on switch
-                renderAppForCurrentSubject();
-                saveState();
-            }
+            
 
             function renderAppForCurrentSubject() {
                 const subjectData = getCurrentSubjectData();
@@ -5176,9 +5171,100 @@ function enterManualCropMode(event) {
 
 // --- END OF NEW FUNCTIONS ---
             // --- Initial Load ---
+       // ==========================================
+    // START: AUTOMATION ENGINE (Paste this at the bottom)
+    // ==========================================
+
+    // 1. Map subjects to your GitHub file paths
+    // Make sure the filename matches EXACTLY what you uploaded to GitHub (case sensitive!)
+    const SubjectFiles = {
+        'Biology': 'assets/pdfs/biologyallquestions.pdf', 
+        // Future examples:
+        // 'Algebra 1': 'assets/pdfs/algebra1.pdf',
+        // 'U.S. History': 'assets/pdfs/ushistory.pdf',
+    };
+
+    /**
+     * Downloads and processes the PDF automatically.
+     */
+    async function loadRemotePDF(url) {
+        const statusDiv = document.getElementById('status');
+        statusDiv.innerHTML = '<div class="flex items-center justify-center"><div class="loader mr-2"></div>Downloading Exam Data...</div>';
+
+        try {
+            const response = await fetch(url);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            
+            const arrayBuffer = await response.arrayBuffer();
+            
+            // Use existing logic to process the data
+            const subjectData = getCurrentSubjectData();
+            subjectData.pdfDoc = await pdfjsLib.getDocument(arrayBuffer).promise;
+            subjectData.teksToRcMap = await buildTeksToRcMap(subjectData.pdfDoc);
+            subjectData.allQuestions = await parseAllPages();
+
+            let statusMessage = `Loaded ${subjectData.allQuestions.length} questions from cloud.`;
+            if (AppState.unparsedPages > 0) {
+                statusMessage += ` <span class="font-bold text-red-600">Warning: ${AppState.unparsedPages} page(s) skipped.</span>`;
+            }
+            statusDiv.innerHTML = statusMessage;
+
+            updateReviewAllButton();
+            renderDashboard();
+            populateCustomFilters();
+            saveState();
+
+        } catch (error) {
+            console.error("Auto-load failed:", error);
+            statusDiv.innerHTML = `<span class="text-red-600 font-bold">Error loading exam file: ${error.message}</span>`;
+        }
+    }
+
+    /**
+     * NEW SWITCH SUBJECT: Triggers auto-load if data is missing.
+     */
+    function switchSubject(subjectName) {
+        AppState.currentSubject = subjectName;
+        const fileInput = document.getElementById('pdf-upload');
+        if(fileInput) fileInput.value = ''; 
         
-            loadState();
+        // Check if we need to load data
+        const subjectData = getCurrentSubjectData();
+        if (subjectData.allQuestions.length === 0 && SubjectFiles[subjectName]) {
+            // Data is missing, try to auto-load
+            loadRemotePDF(SubjectFiles[subjectName]);
+        } else {
+            // Data exists or no auto-file known, just render
             renderAppForCurrentSubject();
+        }
+        saveState();
+    }
+
+    // --- NEW STARTUP SEQUENCE ---
+    loadState();
+    
+    // Render the dropdown
+    const sDropdown = document.getElementById('subject-dropdown');
+    if (sDropdown) {
+        sDropdown.innerHTML = '';
+        Object.keys(AppState.subjects).forEach(subjectName => {
+            const option = document.createElement('option');
+            option.value = subjectName;
+            option.textContent = subjectName;
+            if (subjectName === AppState.currentSubject) option.selected = true;
+            sDropdown.appendChild(option);
+        });
+    }
+
+    // Trigger the initial load logic
+    const currentData = getCurrentSubjectData();
+    if (currentData.allQuestions.length === 0 && SubjectFiles[AppState.currentSubject]) {
+        // If empty, fetch the PDF immediately
+        loadRemotePDF(SubjectFiles[AppState.currentSubject]);
+    } else {
+        // If data exists (from local storage), just show it
+        renderAppForCurrentSubject();
+    }
 function renderResultsScreen() {
     // 1. TRAFFIC COP: Switch the view
     try {
