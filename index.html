@@ -5175,19 +5175,20 @@ function enterManualCropMode(event) {
 
     // 1. MASTER CONFIGURATION
     // This tells the app exactly which files to load and which YEAR to assign them to.
+ const BaseURL = 'https://mrramirez123.github.io/Staar-mastery/';
+    
     const SubjectConfig = {
         'Biology': {
-            exam: 'assets/pdfs/biologyallquestions.pdf',
+            exam: BaseURL + 'assets/pdfs/biologyallquestions.pdf',
             rationales: [
-                { year: '2025', file: 'assets/pdfs/2025-staar-biology-rationale.pdf' },
-                { year: '2024', file: 'assets/pdfs/2024-staar-biology-rationale.pdf' },
-                { year: '2023', file: 'assets/pdfs/2023-staar-biology-rationale.pdf' },
-                { year: '2022', file: 'assets/pdfs/2022-staar-biology-rationale.pdf' },
-                { year: '2019', file: 'assets/pdfs/2019-staar-biology-rationales.pdf' }
+                { year: '2025', file: BaseURL + 'assets/pdfs/2025-staar-biology-rationale.pdf' },
+                { year: '2024', file: BaseURL + 'assets/pdfs/2024-staar-biology-rationale.pdf' },
+                { year: '2023', file: BaseURL + 'assets/pdfs/2023-staar-biology-rationale.pdf' },
+                { year: '2022', file: BaseURL + 'assets/pdfs/2022-staar-biology-rationale.pdf' },
+                { year: '2019', file: BaseURL + 'assets/pdfs/2019-staar-biology-rationales.pdf' }
             ]
         }
     };
-
     /**
      * MAIN AUTO-LOADER
      */
