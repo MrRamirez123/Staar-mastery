@@ -5167,15 +5167,10 @@ function enterManualCropMode(event) {
                 });
             }
 
-
-// ==========================================
-    // START: PRIORITIZED AUTOMATION ENGINE
-    // ==========================================
-
-    // 1. MASTER CONFIGURATION
+// 1. MASTER CONFIGURATION
     const SubjectConfig = {
         'Biology': {
-            // Exam First (Critical)
+            // Exam First (Critical) - ?v=timestamp forces a fresh download
             exam: 'assets/pdfs/biologyallquestions.pdf?v=' + Date.now(),
             // Rationales Second (Background)
             rationales: [
@@ -5214,12 +5209,10 @@ function enterManualCropMode(event) {
             subjectData.allQuestions = await parseAllPages();
 
             // *** ACTION: RENDER IMMEDIATELY ***
-            // We do not wait for rationales. We show the dashboard NOW.
             updateReviewAllButton();
             renderDashboard();
             populateCustomFilters();
             
-            // Update status so you know it's working
             statusDiv.innerHTML = `✅ Questions Loaded! Fetching rationales in background...`;
 
             // --- PHASE 2: BACKGROUND ENRICHMENT (Rationales) ---
@@ -5260,7 +5253,7 @@ function enterManualCropMode(event) {
                 }
                 console.log(`Background loading complete.`);
                 statusDiv.innerHTML = `Ready! Loaded ${subjectData.allQuestions.length} questions & rationales.`;
-                saveState(); // Save the enriched data
+                saveState(); 
             }
 
         } catch (error) {
@@ -5307,57 +5300,12 @@ function enterManualCropMode(event) {
         renderAppForCurrentSubject();
     }
 
-    // ==========================================
-    // END AUTOMATION
-    // ==========================================
-};
+}; // <--- This closes the main window.onload function
+</script>
+</body>
+</html>
 
-    /**
-     * UPDATED SWITCH SUBJECT
-     */
-    function switchSubject(subjectName) {
-        AppState.currentSubject = subjectName;
-        const fileInput = document.getElementById('pdf-upload');
-        if(fileInput) fileInput.value = ''; 
-        
-        const subjectData = getCurrentSubjectData();
-        // If empty, or if we have a config for this subject, try to load it
-        if (subjectData.allQuestions.length === 0 && SubjectConfig[subjectName]) {
-            loadSubjectData(subjectName);
-        } else {
-            renderAppForCurrentSubject();
-        }
-        saveState();
-    }
 
-    // --- INITIALIZATION ---
-    loadState();
-    
-    const sDropdown = document.getElementById('subject-dropdown');
-    if (sDropdown) {
-        sDropdown.innerHTML = '';
-        Object.keys(AppState.subjects).forEach(subjectName => {
-            const option = document.createElement('option');
-            option.value = subjectName;
-            option.textContent = subjectName;
-            if (subjectName === AppState.currentSubject) option.selected = true;
-            sDropdown.appendChild(option);
-        });
-    }
-
-    // Initial Trigger
-    const currentData = getCurrentSubjectData();
-    if (currentData.allQuestions.length === 0 && SubjectConfig[AppState.currentSubject]) {
-        loadSubjectData(AppState.currentSubject);
-    } else {
-        renderAppForCurrentSubject();
-    }
-
-    // ==========================================
-    // END AUTOMATION
-    // ==========================================
-    
- };
 function renderResultsScreen() {
     // 1. TRAFFIC COP: Switch the view
     try {
