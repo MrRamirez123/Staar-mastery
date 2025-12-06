@@ -5168,92 +5168,155 @@ function enterManualCropMode(event) {
             }
 
 // ==========================================
-    // START: AUTOMATION ENGINE (Dynamic Version)
+    // START: AUTOMATION ENGINE (Smart Order & Matching)
     // ==========================================
 
-    // 1. Map subjects to your GitHub file paths
-    // Add your RAW GitHub links here. If a subject doesn't have a link yet, set it to null.
+    // 1. Exam PDF Links
     const SubjectFiles = {
         'Biology': 'https://raw.githubusercontent.com/MrRamirez123/Staar-mastery/main/assets/pdfs/biologyallquestions.pdf', 
-        'Algebra 1': null,    // Placeholder: Add link when ready
-        'English 1': null,    // Placeholder: Add link when ready
-        'English 2': null,    // Placeholder: Add link when ready
-        'U.S. History': null  // Placeholder: Add link when ready
+        'Algebra 1': null,    
+        'English 1': null,    
+        'English 2': null,    
+        'U.S. History': null  
+    };
+
+    // 2. Rationale PDF Links
+    // TIP: Merge your yearly rationale PDFs into ONE file (e.g., "biology_rationales_master.pdf") 
+    // and upload it to GitHub. Then paste that link below.
+    const RationaleFiles = {
+        'Biology': null, // <--- PASTE YOUR MERGED RATIONALE LINK HERE
+        'Algebra 1': null,
+        'English 1': null,
+        'English 2': null,
+        'U.S. History': null
     };
 
     /**
-     * Downloads and processes the PDF automatically from a URL.
+     * Downloads and processes BOTH files in strict order.
      */
-    async function loadRemotePDF(url) {
-        console.log("🚀 [Auto-Load] Starting download for:", url);
+    async function loadRemotePDF(examUrl, rationaleUrl) {
+        console.log("🚀 [Auto-Load] Starting sequence...");
         const statusDiv = document.getElementById('status');
-        statusDiv.innerHTML = '<div class="flex items-center justify-center"><div class="loader mr-2"></div>Downloading Exam Data from GitHub...</div>';
+        statusDiv.innerHTML = '<div class="flex items-center justify-center"><div class="loader mr-2"></div>Step 1: Loading Exam Questions...</div>';
 
         try {
-            const response = await fetch(url);
-            console.log("📡 [Auto-Load] Response status:", response.status);
-            
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            // --- STEP 1: LOAD QUESTIONS (MUST HAPPEN FIRST) ---
+            console.log("⬇️ [Step 1] Fetching Exam PDF...");
+            const response = await fetch(examUrl);
+            if (!response.ok) throw new Error(`Exam PDF Error: ${response.status}`);
             
             const arrayBuffer = await response.arrayBuffer();
-            console.log("📦 [Auto-Load] File downloaded. Size:", arrayBuffer.byteLength);
-
-            // Get the current subject data container
             const subjectData = getCurrentSubjectData();
             
-            // Process the PDF using PDF.js
+            // 1A. Load PDF
             subjectData.pdfDoc = await pdfjsLib.getDocument(arrayBuffer).promise;
-            console.log("📄 [Auto-Load] PDF Loaded into PDF.js");
+            console.log("📄 [Step 1] Exam PDF Ready.");
 
-            // Parse Data
-            subjectData.teksToRcMap = await buildTeksToRcMap(subjectData.pdfDoc);
-            subjectData.allQuestions = await parseAllPages();
-
-            let statusMessage = `Loaded ${subjectData.allQuestions.length} questions from cloud.`;
-            if (AppState.unparsedPages > 0) {
-                statusMessage += ` <span class="font-bold text-red-600">Warning: ${AppState.unparsedPages} page(s) skipped.</span>`;
+            // 1B. Parse Questions (Only if memory is empty)
+            if (subjectData.allQuestions.length === 0) {
+                subjectData.teksToRcMap = await buildTeksToRcMap(subjectData.pdfDoc);
+                subjectData.allQuestions = await parseAllPages();
             }
-            statusDiv.innerHTML = statusMessage;
+            
+            // --- STEP 2: LOAD RATIONALES (HAPPENS SECOND) ---
+            if (rationaleUrl) {
+                statusDiv.innerHTML = '<div class="flex items-center justify-center"><div class="loader mr-2"></div>Step 2: Matching Rationales...</div>';
+                console.log("⬇️ [Step 2] Fetching Rationale PDF...");
+                
+                try {
+                    const ratResponse = await fetch(rationaleUrl);
+                    if (ratResponse.ok) {
+                        const ratBuffer = await ratResponse.arrayBuffer();
+                        subjectData.rationalePdfDoc = await pdfjsLib.getDocument(ratBuffer).promise;
+                        
+                        console.log("⚙️ [Step 2] Scanning Rationale Pages...");
+                        let matchCount = 0;
 
-            // Refresh UI
+                        // Loop through every page of the Rationale PDF
+                        for (let i = 1; i <= subjectData.rationalePdfDoc.numPages; i++) {
+                            const page = await subjectData.rationalePdfDoc.getPage(i);
+                            const textContent = await page.getTextContent();
+                            const pageText = textContent.items.map(item => item.str).join('\n');
+                            
+                            // A. Detect Year on this specific page (e.g., "2024")
+                            const yearMatch = pageText.match(/\b20\d{2}\b/);
+                            const pageYear = yearMatch ? yearMatch[0] : null;
+
+                            // B. Parse items on this page
+                            const rationalesOnPage = parseRationalesText(pageText);
+
+                            // C. Match to Questions
+                            rationalesOnPage.forEach(rat => {
+                                // Try to find a question with this Number AND Year
+                                let targetQ = null;
+                                
+                                if (pageYear) {
+                                    // High Accuracy: Match Year and ID
+                                    targetQ = subjectData.allQuestions.find(q => 
+                                        q.year === pageYear && 
+                                        (q.id.endsWith(`-Q${rat.number}`) || q.id.endsWith(`-Q0${rat.number}`))
+                                    );
+                                } else {
+                                    // Fallback: If page has no year, check if we only have one year of questions loaded
+                                    const uniqueYears = [...new Set(subjectData.allQuestions.map(q => q.year))];
+                                    if (uniqueYears.length === 1) {
+                                        targetQ = subjectData.allQuestions.find(q => 
+                                            q.id.endsWith(`-Q${rat.number}`) || q.id.endsWith(`-Q0${rat.number}`)
+                                        );
+                                    }
+                                }
+
+                                if (targetQ) {
+                                    targetQ.rationaleMap = rat.rationaleMap;
+                                    targetQ.rationalePage = i; // Link to this specific page
+                                    matchCount++;
+                                }
+                            });
+                        }
+                        console.log(`✅ [Step 2] Successfully mapped ${matchCount} rationales.`);
+
+                    } else {
+                        console.warn("⚠️ [Step 2] Rationale URL found but failed to load.");
+                    }
+                } catch (e) {
+                    console.error("❌ [Step 2] Rationale Processing Error:", e);
+                }
+            }
+
+            // --- STEP 3: FINISH ---
+            let statusMessage = `Ready: ${subjectData.allQuestions.length} Questions Loaded.`;
+            if (subjectData.rationalePdfDoc) statusMessage += ` Rationales Active.`;
+            
+            statusDiv.innerHTML = statusMessage;
             updateReviewAllButton();
             renderDashboard();
             populateCustomFilters();
             saveState();
-            console.log("✅ [Auto-Load] Process Complete.");
 
         } catch (error) {
-            console.error("❌ [Auto-Load] Failed:", error);
-            statusDiv.innerHTML = `<span class="text-red-600 font-bold">Error loading exam file: ${error.message}</span>`;
+            console.error("❌ [Auto-Load] Critical Failure:", error);
+            statusDiv.innerHTML = `<span class="text-red-600 font-bold">Error: ${error.message}</span>`;
         }
     }
 
     /**
-     * SWITCH SUBJECT: Handles switching via dropdown.
-     * Logic: 
-     * 1. Change State. 
-     * 2. If URL exists -> Auto Load. 
-     * 3. If no URL -> Show standard view (manual upload).
+     * SWITCH SUBJECT
      */
     function switchSubject(subjectName) {
         console.log("🔄 [Switch] Switching to:", subjectName);
         AppState.currentSubject = subjectName;
         
-        // Clear the file input visually
         const fileInput = document.getElementById('pdf-upload');
         if(fileInput) fileInput.value = ''; 
         
         const subjectData = getCurrentSubjectData();
-        const remoteUrl = SubjectFiles[subjectName];
+        const examUrl = SubjectFiles[subjectName];
+        const rationaleUrl = RationaleFiles[subjectName];
 
-        // LOGIC CHECK:
-        // If we have NO questions loaded AND we have a valid URL -> Auto Load
-if ((subjectData.allQuestions.length === 0 || !subjectData.pdfDoc) && remoteUrl) {
-    console.log("⚡ [Switch] URL found. Triggering Auto-Load.");
-            loadRemotePDF(remoteUrl);
+        // Logic: Force download if Questions OR PDF is missing
+        if ((subjectData.allQuestions.length === 0 || !subjectData.pdfDoc) && examUrl) {
+            loadRemotePDF(examUrl, rationaleUrl);
         } else {
-            // Otherwise, just render what we have (or the empty placeholder)
-            console.log("ℹ️ [Switch] No URL or data already exists. Rendering view.");
             renderAppForCurrentSubject();
         }
         saveState();
@@ -5261,9 +5324,9 @@ if ((subjectData.allQuestions.length === 0 || !subjectData.pdfDoc) && remoteUrl)
 
     // --- STARTUP SEQUENCE ---
     console.log("🏁 [Startup] initializing...");
-    loadState(); // Load user's last session from memory (e.g., they might be on Algebra 1)
+    loadState(); 
     
-    // Render the dropdown with the correct selection
+    // Render dropdown
     const sDropdown = document.getElementById('subject-dropdown');
     if (sDropdown) {
         sDropdown.innerHTML = '';
@@ -5276,20 +5339,16 @@ if ((subjectData.allQuestions.length === 0 || !subjectData.pdfDoc) && remoteUrl)
         });
     }
 
-    // Trigger Initial Load Logic based on the stored subject
+    // Trigger Initial Load
     const currentData = getCurrentSubjectData();
-    const currentUrl = SubjectFiles[AppState.currentSubject];
+    const currentExamUrl = SubjectFiles[AppState.currentSubject];
+    const currentRationaleUrl = RationaleFiles[AppState.currentSubject];
 
-    console.log(`📊 [Startup] Subject: ${AppState.currentSubject}`);
-
-if ((currentData.allQuestions.length === 0 || !currentData.pdfDoc) && currentUrl) {
-    console.log("🚀 [Startup] Triggering Auto-Load for saved subject...");
-        loadRemotePDF(currentUrl);
+    if ((currentData.allQuestions.length === 0 || !currentData.pdfDoc) && currentExamUrl) {
+        loadRemotePDF(currentExamUrl, currentRationaleUrl);
     } else {
-        console.log("✅ [Startup] Rendering existing data or waiting for manual upload.");
         renderAppForCurrentSubject();
     }
-
 
 function renderResultsScreen() {
     // 1. TRAFFIC COP: Switch the view
