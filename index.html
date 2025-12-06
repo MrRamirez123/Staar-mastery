@@ -5248,8 +5248,8 @@ function enterManualCropMode(event) {
 
         // LOGIC CHECK:
         // If we have NO questions loaded AND we have a valid URL -> Auto Load
-        if (subjectData.allQuestions.length === 0 && remoteUrl) {
-            console.log("⚡ [Switch] URL found. Triggering Auto-Load.");
+if ((subjectData.allQuestions.length === 0 || !subjectData.pdfDoc) && remoteUrl) {
+    console.log("⚡ [Switch] URL found. Triggering Auto-Load.");
             loadRemotePDF(remoteUrl);
         } else {
             // Otherwise, just render what we have (or the empty placeholder)
@@ -5282,8 +5282,8 @@ function enterManualCropMode(event) {
 
     console.log(`📊 [Startup] Subject: ${AppState.currentSubject}`);
 
-    if (currentData.allQuestions.length === 0 && currentUrl) {
-        console.log("🚀 [Startup] Triggering Auto-Load for saved subject...");
+if ((currentData.allQuestions.length === 0 || !currentData.pdfDoc) && currentUrl) {
+    console.log("🚀 [Startup] Triggering Auto-Load for saved subject...");
         loadRemotePDF(currentUrl);
     } else {
         console.log("✅ [Startup] Rendering existing data or waiting for manual upload.");
