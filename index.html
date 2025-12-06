@@ -5168,28 +5168,29 @@ function enterManualCropMode(event) {
             }
 
 
-
 // ==========================================
-    // START: ADVANCED AUTOMATION ENGINE (v2)
+    // START: PRIORITIZED AUTOMATION ENGINE
     // ==========================================
 
     // 1. MASTER CONFIGURATION
-    // This tells the app exactly which files to load and which YEAR to assign them to.
-const SubjectConfig = {
+    const SubjectConfig = {
         'Biology': {
-            exam: 'assets/pdfs/biologyallquestions.pdf',
+            // Exam First (Critical)
+            exam: 'assets/pdfs/biologyallquestions.pdf?v=' + Date.now(),
+            // Rationales Second (Background)
             rationales: [
-                { year: '2025', file: 'assets/pdfs/2025-staar-biology-rationale.pdf' },
-                { year: '2024', file: 'assets/pdfs/2024-staar-biology-rationale.pdf' },
-                { year: '2023', file: 'assets/pdfs/2023-staar-biology-rationale.pdf' },
-                { year: '2022', file: 'assets/pdfs/2022-staar-biology-rationale.pdf' },
-                { year: '2019', file: 'assets/pdfs/2019-staar-biology-rationales.pdf' }
+                { year: '2025', file: 'assets/pdfs/2025-staar-biology-rationale.pdf?v=' + Date.now() },
+                { year: '2024', file: 'assets/pdfs/2024-staar-biology-rationale.pdf?v=' + Date.now() },
+                { year: '2023', file: 'assets/pdfs/2023-staar-biology-rationale.pdf?v=' + Date.now() },
+                { year: '2022', file: 'assets/pdfs/2022-staar-biology-rationale.pdf?v=' + Date.now() },
+                { year: '2019', file: 'assets/pdfs/2019-staar-biology-rationales.pdf?v=' + Date.now() }
             ]
         }
     };
- /**
-     * MAIN AUTO-LOADER (SMARTER VERSION)
-     * Loads the Exam first (so you see questions), THEN loads Rationales in the background.
+
+    /**
+     * MAIN AUTO-LOADER
+     * Logic: Load Exam -> SHOW IT -> Then load rationales
      */
     async function loadSubjectData(subjectName) {
         const config = SubjectConfig[subjectName];
@@ -5197,18 +5198,14 @@ const SubjectConfig = {
 
         const statusDiv = document.getElementById('status');
         
-        // 1. FIRST: Load the Main Exam (The most important part)
-        statusDiv.innerHTML = '<div class="flex items-center justify-center"><div class="loader mr-2"></div>Loading Questions...</div>';
+        // --- PHASE 1: CRITICAL PATH (The Exam) ---
+        statusDiv.innerHTML = '<div class="flex items-center justify-center"><div class="loader mr-2"></div>Loading Exam Questions...</div>';
 
         try {
-            // Use a relative path (safest way to find files)
-            // We strip the domain to avoid "Staar-mastery" vs "staar-mastery" capitalization errors
-            const relativeExamPath = config.exam.replace('https://mrramirez123.github.io/Staar-mastery/', '');
+            console.log(`Step 1: Fetching Exam from ${config.exam}`);
+            const examResp = await fetch(config.exam);
             
-            console.log(`Step 1: Fetching Exam from ${relativeExamPath}`);
-            const examResp = await fetch(relativeExamPath);
-            
-            if (!examResp.ok) throw new Error(`Could not find exam file: ${relativeExamPath}`);
+            if (!examResp.ok) throw new Error(`Could not find exam file: ${config.exam}`);
             const examBuffer = await examResp.arrayBuffer();
             
             const subjectData = getCurrentSubjectData();
@@ -5216,23 +5213,23 @@ const SubjectConfig = {
             subjectData.teksToRcMap = await buildTeksToRcMap(subjectData.pdfDoc);
             subjectData.allQuestions = await parseAllPages();
 
-            // *** CRITICAL STEP: Render the questions NOW! ***
-            // Don't wait for rationales. Show the user the questions immediately.
+            // *** ACTION: RENDER IMMEDIATELY ***
+            // We do not wait for rationales. We show the dashboard NOW.
             updateReviewAllButton();
             renderDashboard();
             populateCustomFilters();
-            statusDiv.innerHTML = `Loaded ${subjectData.allQuestions.length} questions. Fetching rationales...`;
+            
+            // Update status so you know it's working
+            statusDiv.innerHTML = `✅ Questions Loaded! Fetching rationales in background...`;
 
-            // 2. SECOND: Load Rationales in the background
+            // --- PHASE 2: BACKGROUND ENRICHMENT (Rationales) ---
             if (config.rationales && config.rationales.length > 0) {
                 let totalMapped = 0;
                 
                 for (const ratConfig of config.rationales) {
-                    const relativeRatPath = ratConfig.file.replace('https://mrramirez123.github.io/Staar-mastery/', '');
                     console.log(`Step 2: Fetching Rationale for ${ratConfig.year}...`);
-                    
                     try {
-                        const ratResp = await fetch(relativeRatPath);
+                        const ratResp = await fetch(ratConfig.file);
                         if (ratResp.ok) {
                             const ratBuffer = await ratResp.arrayBuffer();
                             const ratDoc = await pdfjsLib.getDocument(ratBuffer).promise;
@@ -5258,12 +5255,12 @@ const SubjectConfig = {
                             });
                         }
                     } catch (e) {
-                        console.warn(`Skipping rationale for ${ratConfig.year} (File issue).`);
+                        console.warn(`Background load issue for ${ratConfig.year}:`, e);
                     }
                 }
-                console.log(`Background loading complete. Mapped ${totalMapped} rationales.`);
+                console.log(`Background loading complete.`);
                 statusDiv.innerHTML = `Ready! Loaded ${subjectData.allQuestions.length} questions & rationales.`;
-                saveState(); // Save the rationales so we don't have to download them again next time
+                saveState(); // Save the enriched data
             }
 
         } catch (error) {
@@ -5271,6 +5268,49 @@ const SubjectConfig = {
             statusDiv.innerHTML = `<span class="text-red-600 font-bold">Failed to load: ${error.message}</span>`;
         }
     }
+
+    function switchSubject(subjectName) {
+        AppState.currentSubject = subjectName;
+        const fileInput = document.getElementById('pdf-upload');
+        if(fileInput) fileInput.value = ''; 
+        
+        const subjectData = getCurrentSubjectData();
+        // Always try to reload if empty
+        if (subjectData.allQuestions.length === 0 && SubjectConfig[subjectName]) {
+            loadSubjectData(subjectName);
+        } else {
+            renderAppForCurrentSubject();
+        }
+        saveState();
+    }
+
+    // --- INITIALIZATION ---
+    loadState();
+    
+    const sDropdown = document.getElementById('subject-dropdown');
+    if (sDropdown) {
+        sDropdown.innerHTML = '';
+        Object.keys(AppState.subjects).forEach(subjectName => {
+            const option = document.createElement('option');
+            option.value = subjectName;
+            option.textContent = subjectName;
+            if (subjectName === AppState.currentSubject) option.selected = true;
+            sDropdown.appendChild(option);
+        });
+    }
+
+    // Initial Trigger
+    const currentData = getCurrentSubjectData();
+    if (currentData.allQuestions.length === 0 && SubjectConfig[AppState.currentSubject]) {
+        loadSubjectData(AppState.currentSubject);
+    } else {
+        renderAppForCurrentSubject();
+    }
+
+    // ==========================================
+    // END AUTOMATION
+    // ==========================================
+};
 
     /**
      * UPDATED SWITCH SUBJECT
