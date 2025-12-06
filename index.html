@@ -5201,7 +5201,7 @@ function enterManualCropMode(event) {
         try {
             // A. Fetch and Process the MAIN EXAM PDF
             console.log(`Fetching Exam: ${config.exam}`);
-            const examResp = await fetch(config.exam);
+const examResp = await fetch(config.exam + '?t=' + Date.now());
             if (!examResp.ok) throw new Error(`Exam file not found: ${config.exam}`);
             const examBuffer = await examResp.arrayBuffer();
             
@@ -5217,7 +5217,7 @@ function enterManualCropMode(event) {
                 for (const ratConfig of config.rationales) {
                     console.log(`Fetching Rationale for ${ratConfig.year}...`);
                     try {
-                        const ratResp = await fetch(ratConfig.file);
+const ratResp = await fetch(ratConfig.file + '?t=' + Date.now());
                         if (ratResp.ok) {
                             const ratBuffer = await ratResp.arrayBuffer();
                             const ratDoc = await pdfjsLib.getDocument(ratBuffer).promise;
