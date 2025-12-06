@@ -5186,7 +5186,6 @@ function enterManualCropMode(event) {
                 { year: '2019', file: 'assets/pdfs/2019-staar-biology-rationales.pdf' }
             ]
         }
-        // Add Algebra/History here in the future
     };
 
     /**
@@ -5241,6 +5240,9 @@ function enterManualCropMode(event) {
                                 );
                                 if (targetQ) {
                                     targetQ.rationaleMap = rat.rationaleMap;
+                                    // Save page number for the "View Source" feature
+                                    targetQ.rationalePage = 1; 
+                                    // (Optimisation: We could map exact pages here if needed later)
                                     totalMapped++;
                                 }
                             });
@@ -5255,7 +5257,7 @@ function enterManualCropMode(event) {
             }
 
             // C. Finalize
-            let statusMessage = `Loaded ${subjectData.allQuestions.length} questions.`;
+            let statusMessage = `Loaded ${subjectData.allQuestions.length} questions from cloud.`;
             statusDiv.innerHTML = statusMessage;
             
             updateReviewAllButton();
@@ -5310,6 +5312,9 @@ function enterManualCropMode(event) {
         renderAppForCurrentSubject();
     }
 
+    // ==========================================
+    // END AUTOMATION
+    // ==========================================
     
  
 function renderResultsScreen() {
