@@ -5168,7 +5168,7 @@ function enterManualCropMode(event) {
             }
 
 // ==========================================
-    // START: AUTOMATION ENGINE (Smart Order & Matching)
+    // START: AUTOMATION ENGINE (Multi-File Support)
     // ==========================================
 
     // 1. Exam PDF Links
@@ -5180,9 +5180,7 @@ function enterManualCropMode(event) {
         'U.S. History': null  
     };
 
-    // 2. Rationale PDF Links
-    // TIP: Merge your yearly rationale PDFs into ONE file (e.g., "biology_rationales_master.pdf") 
-    // and upload it to GitHub. Then paste that link below.
+    // 2. Rationale PDF Links (Now supports Lists!)
     const RationaleFiles = {
         'Biology': [
             'https://raw.githubusercontent.com/MrRamirez123/Staar-mastery/main/assets/pdfs/2019-staar-biology-rationales.pdf',
@@ -5192,22 +5190,22 @@ function enterManualCropMode(event) {
             'https://raw.githubusercontent.com/MrRamirez123/Staar-mastery/main/assets/pdfs/2024-staar-biology-rationale.pdf',
             'https://raw.githubusercontent.com/MrRamirez123/Staar-mastery/main/assets/pdfs/2025-staar-biology-rationale.pdf'
         ],
-        'Algebra 1': null,
-        'English 1': null,
-        'English 2': null,
-        'U.S. History': null
+        'Algebra 1': [],
+        'English 1': [],
+        'English 2': [],
+        'U.S. History': []
     };
 
     /**
-     * Downloads and processes BOTH files in strict order.
+     * Downloads and processes Exam + Multiple Rationale Files
      */
-    async function loadRemotePDF(examUrl, rationaleUrl) {
+    async function loadRemotePDF(examUrl, rationaleUrls) {
         console.log("🚀 [Auto-Load] Starting sequence...");
         const statusDiv = document.getElementById('status');
         statusDiv.innerHTML = '<div class="flex items-center justify-center"><div class="loader mr-2"></div>Step 1: Loading Exam Questions...</div>';
 
         try {
-            // --- STEP 1: LOAD QUESTIONS (MUST HAPPEN FIRST) ---
+            // --- STEP 1: LOAD QUESTIONS ---
             console.log("⬇️ [Step 1] Fetching Exam PDF...");
             const response = await fetch(examUrl);
             if (!response.ok) throw new Error(`Exam PDF Error: ${response.status}`);
@@ -5215,85 +5213,69 @@ function enterManualCropMode(event) {
             const arrayBuffer = await response.arrayBuffer();
             const subjectData = getCurrentSubjectData();
             
-            // 1A. Load PDF
             subjectData.pdfDoc = await pdfjsLib.getDocument(arrayBuffer).promise;
             console.log("📄 [Step 1] Exam PDF Ready.");
 
-            // 1B. Parse Questions (Only if memory is empty)
             if (subjectData.allQuestions.length === 0) {
                 subjectData.teksToRcMap = await buildTeksToRcMap(subjectData.pdfDoc);
                 subjectData.allQuestions = await parseAllPages();
             }
             
-            // --- STEP 2: LOAD RATIONALES (HAPPENS SECOND) ---
-            if (rationaleUrl) {
-                statusDiv.innerHTML = '<div class="flex items-center justify-center"><div class="loader mr-2"></div>Step 2: Matching Rationales...</div>';
-                console.log("⬇️ [Step 2] Fetching Rationale PDF...");
-                
-                try {
-                    const ratResponse = await fetch(rationaleUrl);
-                    if (ratResponse.ok) {
-                        const ratBuffer = await ratResponse.arrayBuffer();
-                        subjectData.rationalePdfDoc = await pdfjsLib.getDocument(ratBuffer).promise;
-                        
-                        console.log("⚙️ [Step 2] Scanning Rationale Pages...");
-                        let matchCount = 0;
+            // --- STEP 2: LOAD RATIONALES (Loop through all files) ---
+            // Ensure rationaleUrls is an array
+            const urls = Array.isArray(rationaleUrls) ? rationaleUrls : (rationaleUrls ? [rationaleUrls] : []);
+            
+            if (urls.length > 0) {
+                statusDiv.innerHTML = '<div class="flex items-center justify-center"><div class="loader mr-2"></div>Step 2: Processing Rationales...</div>';
+                let totalMatches = 0;
 
-                        // Loop through every page of the Rationale PDF
-                        for (let i = 1; i <= subjectData.rationalePdfDoc.numPages; i++) {
-                            const page = await subjectData.rationalePdfDoc.getPage(i);
-                            const textContent = await page.getTextContent();
-                            const pageText = textContent.items.map(item => item.str).join('\n');
+                for (const url of urls) {
+                    console.log(`⬇️ [Step 2] Fetching: ${url.split('/').pop()}...`);
+                    try {
+                        const ratResponse = await fetch(url);
+                        if (ratResponse.ok) {
+                            const ratBuffer = await ratResponse.arrayBuffer();
+                            // We don't save the doc for multi-files (too much memory), we just scan it
+                            const tempDoc = await pdfjsLib.getDocument(ratBuffer).promise;
                             
-                            // A. Detect Year on this specific page (e.g., "2024")
-                            const yearMatch = pageText.match(/\b20\d{2}\b/);
-                            const pageYear = yearMatch ? yearMatch[0] : null;
-
-                            // B. Parse items on this page
-                            const rationalesOnPage = parseRationalesText(pageText);
-
-                            // C. Match to Questions
-                            rationalesOnPage.forEach(rat => {
-                                // Try to find a question with this Number AND Year
-                                let targetQ = null;
+                            // Scan Pages
+                            for (let i = 1; i <= tempDoc.numPages; i++) {
+                                const page = await tempDoc.getPage(i);
+                                const textContent = await page.getTextContent();
+                                const pageText = textContent.items.map(item => item.str).join('\n');
                                 
-                                if (pageYear) {
-                                    // High Accuracy: Match Year and ID
-                                    targetQ = subjectData.allQuestions.find(q => 
-                                        q.year === pageYear && 
-                                        (q.id.endsWith(`-Q${rat.number}`) || q.id.endsWith(`-Q0${rat.number}`))
-                                    );
-                                } else {
-                                    // Fallback: If page has no year, check if we only have one year of questions loaded
-                                    const uniqueYears = [...new Set(subjectData.allQuestions.map(q => q.year))];
-                                    if (uniqueYears.length === 1) {
+                                // Detect Year (e.g., "2024")
+                                const yearMatch = pageText.match(/\b20\d{2}\b/);
+                                const pageYear = yearMatch ? yearMatch[0] : null;
+
+                                const rationalesOnPage = parseRationalesText(pageText);
+
+                                rationalesOnPage.forEach(rat => {
+                                    let targetQ = null;
+                                    if (pageYear) {
                                         targetQ = subjectData.allQuestions.find(q => 
-                                            q.id.endsWith(`-Q${rat.number}`) || q.id.endsWith(`-Q0${rat.number}`)
+                                            q.year === pageYear && 
+                                            (q.id.endsWith(`-Q${rat.number}`) || q.id.endsWith(`-Q0${rat.number}`))
                                         );
                                     }
-                                }
-
-                                if (targetQ) {
-                                    targetQ.rationaleMap = rat.rationaleMap;
-                                    targetQ.rationalePage = i; // Link to this specific page
-                                    matchCount++;
-                                }
-                            });
+                                    if (targetQ) {
+                                        targetQ.rationaleMap = rat.rationaleMap;
+                                        // We can't link to a page number easily with multiple files, so we skip the "View Page" link
+                                        targetQ.rationalePage = null; 
+                                        totalMatches++;
+                                    }
+                                });
+                            }
                         }
-                        console.log(`✅ [Step 2] Successfully mapped ${matchCount} rationales.`);
-
-                    } else {
-                        console.warn("⚠️ [Step 2] Rationale URL found but failed to load.");
+                    } catch (e) {
+                        console.warn(`⚠️ Skipped a rationale file due to error: ${e.message}`);
                     }
-                } catch (e) {
-                    console.error("❌ [Step 2] Rationale Processing Error:", e);
                 }
+                console.log(`✅ [Step 2] Complete. Mapped ${totalMatches} total rationales.`);
             }
 
             // --- STEP 3: FINISH ---
             let statusMessage = `Ready: ${subjectData.allQuestions.length} Questions Loaded.`;
-            if (subjectData.rationalePdfDoc) statusMessage += ` Rationales Active.`;
-            
             statusDiv.innerHTML = statusMessage;
             updateReviewAllButton();
             renderDashboard();
@@ -5318,11 +5300,10 @@ function enterManualCropMode(event) {
         
         const subjectData = getCurrentSubjectData();
         const examUrl = SubjectFiles[subjectName];
-        const rationaleUrl = RationaleFiles[subjectName];
+        const rationaleUrls = RationaleFiles[subjectName];
 
-        // Logic: Force download if Questions OR PDF is missing
         if ((subjectData.allQuestions.length === 0 || !subjectData.pdfDoc) && examUrl) {
-            loadRemotePDF(examUrl, rationaleUrl);
+            loadRemotePDF(examUrl, rationaleUrls);
         } else {
             renderAppForCurrentSubject();
         }
@@ -5333,7 +5314,6 @@ function enterManualCropMode(event) {
     console.log("🏁 [Startup] initializing...");
     loadState(); 
     
-    // Render dropdown
     const sDropdown = document.getElementById('subject-dropdown');
     if (sDropdown) {
         sDropdown.innerHTML = '';
@@ -5346,6 +5326,15 @@ function enterManualCropMode(event) {
         });
     }
 
+    const currentData = getCurrentSubjectData();
+    const currentExamUrl = SubjectFiles[AppState.currentSubject];
+    const currentRationaleUrls = RationaleFiles[AppState.currentSubject];
+
+    if ((currentData.allQuestions.length === 0 || !currentData.pdfDoc) && currentExamUrl) {
+        loadRemotePDF(currentExamUrl, currentRationaleUrls);
+    } else {
+        renderAppForCurrentSubject();
+    }
     // Trigger Initial Load
     const currentData = getCurrentSubjectData();
     const currentExamUrl = SubjectFiles[AppState.currentSubject];
