@@ -5167,17 +5167,24 @@ function enterManualCropMode(event) {
                 });
             }
 
+// ==========================================
+    // START: AUTOMATION ENGINE (Multi-File Exams & Rationales)
+    // ==========================================
 
     // 1. Exam PDF Links
+    // Supports single string (one file) OR array of strings (multiple files)
     const SubjectFiles = {
         'Biology': 'https://raw.githubusercontent.com/MrRamirez123/Staar-mastery/main/assets/pdfs/biologyallquestions.pdf', 
-        'Algebra 1': null,    
+        'Algebra 1': [
+            'https://raw.githubusercontent.com/MrRamirez123/Staar-mastery/main/assets/pdfs/Algebra1621.pdf',
+            'https://raw.githubusercontent.com/MrRamirez123/Staar-mastery/main/assets/pdfs/Algebra2225.pdf'
+        ],
         'English 1': null,    
         'English 2': null,    
         'U.S. History': null  
     };
 
-    // 2. Rationale PDF Links (Now supports Lists!)
+    // 2. Rationale PDF Links
     const RationaleFiles = {
         'Biology': [
             'https://raw.githubusercontent.com/MrRamirez123/Staar-mastery/main/assets/pdfs/2019-staar-biology-rationales.pdf',
@@ -5187,52 +5194,84 @@ function enterManualCropMode(event) {
             'https://raw.githubusercontent.com/MrRamirez123/Staar-mastery/main/assets/pdfs/2024-staar-biology-rationale.pdf',
             'https://raw.githubusercontent.com/MrRamirez123/Staar-mastery/main/assets/pdfs/2025-staar-biology-rationale.pdf'
         ],
-        'Algebra 1': [],
+        'Algebra 1': [
+             'https://raw.githubusercontent.com/MrRamirez123/Staar-mastery/main/assets/pdfs/2023-staar-algebra-i-rationale.pdf',
+             'https://raw.githubusercontent.com/MrRamirez123/Staar-mastery/main/assets/pdfs/2024-staar-algebra-i-rationale.pdf',
+             'https://raw.githubusercontent.com/MrRamirez123/Staar-mastery/main/assets/pdfs/2025-staar-algebra-1-rationale.pdf'
+        ],
         'English 1': [],
         'English 2': [],
-        'U.S. History': []
+        'U.S. History': [
+            'https://raw.githubusercontent.com/MrRamirez123/Staar-mastery/main/assets/pdfs/2024-staar-us-history-rationale.pdf',
+            'https://raw.githubusercontent.com/MrRamirez123/Staar-mastery/main/assets/pdfs/2025-staar-us-history-rationale.pdf'
+        ]
     };
 
     /**
      * Downloads and processes Exam + Multiple Rationale Files
      */
-    async function loadRemotePDF(examUrl, rationaleUrls) {
+    async function loadRemotePDF(examUrls, rationaleUrls) {
         console.log("🚀 [Auto-Load] Starting sequence...");
         const statusDiv = document.getElementById('status');
         statusDiv.innerHTML = '<div class="flex items-center justify-center"><div class="loader mr-2"></div>Step 1: Loading Exam Questions...</div>';
 
         try {
             // --- STEP 1: LOAD QUESTIONS ---
-            console.log("⬇️ [Step 1] Fetching Exam PDF...");
-            const response = await fetch(examUrl);
-            if (!response.ok) throw new Error(`Exam PDF Error: ${response.status}`);
-            
-            const arrayBuffer = await response.arrayBuffer();
             const subjectData = getCurrentSubjectData();
             
-            subjectData.pdfDoc = await pdfjsLib.getDocument(arrayBuffer).promise;
-            console.log("📄 [Step 1] Exam PDF Ready.");
+            // Handle single URL or Array of URLs for Exams
+            const eUrls = Array.isArray(examUrls) ? examUrls : [examUrls];
+            
+            // Only load if we haven't already loaded the doc (or if we are forced to reload)
+            if (!subjectData.pdfDoc) {
+                 // Note: PDF.js only supports viewing one document at a time easily. 
+                 // For the multi-file exam workaround, we will load the FIRST file as the main "doc" for viewing,
+                 // but we will parse ALL files to get the questions. 
+                 // Limitation: You might only be able to see images from the first PDF in the viewer.
+                 // Ideally, merging the exam PDF is better, but this parses the data.
+                 
+                 console.log("⬇️ [Step 1] Fetching Main Exam PDF:", eUrls[0]);
+                 const response = await fetch(eUrls[0]);
+                 if (!response.ok) throw new Error(`Exam PDF Error: ${response.status}`);
+                 const arrayBuffer = await response.arrayBuffer();
+                 subjectData.pdfDoc = await pdfjsLib.getDocument(arrayBuffer).promise;
+                 console.log("📄 [Step 1] Main Exam PDF Ready for Viewing.");
+            }
 
             if (subjectData.allQuestions.length === 0) {
-                subjectData.teksToRcMap = await buildTeksToRcMap(subjectData.pdfDoc);
-                subjectData.allQuestions = await parseAllPages();
+                console.log("⚙️ [Step 1] Parsing Exam Questions from all files...");
+                subjectData.teksToRcMap = await buildTeksToRcMap(subjectData.pdfDoc); // Use main doc for map
+                
+                // Loop through ALL exam files to parse questions
+                for (const url of eUrls) {
+                    console.log(`   -> Parsing file: ${url.split('/').pop()}`);
+                    const res = await fetch(url);
+                    const buf = await res.arrayBuffer();
+                    const tempDoc = await pdfjsLib.getDocument(buf).promise;
+                    
+                    // Temporarily swap the doc to parse its pages
+                    const savedDoc = subjectData.pdfDoc;
+                    subjectData.pdfDoc = tempDoc; 
+                    const newQuestions = await parseAllPages();
+                    subjectData.allQuestions.push(...newQuestions);
+                    subjectData.pdfDoc = savedDoc; // Restore main doc
+                }
+                console.log(`   -> Total Questions Parsed: ${subjectData.allQuestions.length}`);
             }
             
             // --- STEP 2: LOAD RATIONALES (Loop through all files) ---
-            // Ensure rationaleUrls is an array
-            const urls = Array.isArray(rationaleUrls) ? rationaleUrls : (rationaleUrls ? [rationaleUrls] : []);
+            const rUrls = Array.isArray(rationaleUrls) ? rationaleUrls : (rationaleUrls ? [rationaleUrls] : []);
             
-            if (urls.length > 0) {
+            if (rUrls.length > 0) {
                 statusDiv.innerHTML = '<div class="flex items-center justify-center"><div class="loader mr-2"></div>Step 2: Processing Rationales...</div>';
                 let totalMatches = 0;
 
-                for (const url of urls) {
+                for (const url of rUrls) {
                     console.log(`⬇️ [Step 2] Fetching: ${url.split('/').pop()}...`);
                     try {
                         const ratResponse = await fetch(url);
                         if (ratResponse.ok) {
                             const ratBuffer = await ratResponse.arrayBuffer();
-                            // We don't save the doc for multi-files (too much memory), we just scan it
                             const tempDoc = await pdfjsLib.getDocument(ratBuffer).promise;
                             
                             // Scan Pages
@@ -5257,7 +5296,6 @@ function enterManualCropMode(event) {
                                     }
                                     if (targetQ) {
                                         targetQ.rationaleMap = rat.rationaleMap;
-                                        // We can't link to a page number easily with multiple files, so we skip the "View Page" link
                                         targetQ.rationalePage = null; 
                                         totalMatches++;
                                     }
@@ -5296,11 +5334,12 @@ function enterManualCropMode(event) {
         if(fileInput) fileInput.value = ''; 
         
         const subjectData = getCurrentSubjectData();
-        const examUrl = SubjectFiles[subjectName];
+        const examUrls = SubjectFiles[subjectName];
         const rationaleUrls = RationaleFiles[subjectName];
 
-        if ((subjectData.allQuestions.length === 0 || !subjectData.pdfDoc) && examUrl) {
-            loadRemotePDF(examUrl, rationaleUrls);
+        // Trigger load if data is missing AND we have exam links
+        if ((subjectData.allQuestions.length === 0 || !subjectData.pdfDoc) && examUrls) {
+            loadRemotePDF(examUrls, rationaleUrls);
         } else {
             renderAppForCurrentSubject();
         }
@@ -5323,14 +5362,12 @@ function enterManualCropMode(event) {
         });
     }
 
-
-    // Trigger Initial Load
     const currentData = getCurrentSubjectData();
-    const currentExamUrl = SubjectFiles[AppState.currentSubject];
-    const currentRationaleUrl = RationaleFiles[AppState.currentSubject];
+    const currentExamUrls = SubjectFiles[AppState.currentSubject];
+    const currentRationaleUrls = RationaleFiles[AppState.currentSubject];
 
-    if ((currentData.allQuestions.length === 0 || !currentData.pdfDoc) && currentExamUrl) {
-        loadRemotePDF(currentExamUrl, currentRationaleUrl);
+    if ((currentData.allQuestions.length === 0 || !currentData.pdfDoc) && currentExamUrls) {
+        loadRemotePDF(currentExamUrls, currentRationaleUrls);
     } else {
         renderAppForCurrentSubject();
     }
