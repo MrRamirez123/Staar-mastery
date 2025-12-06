@@ -5189,21 +5189,28 @@ function enterManualCropMode(event) {
             ]
         }
     };
-    /**
-     * MAIN AUTO-LOADER
+ /**
+     * MAIN AUTO-LOADER (SMARTER VERSION)
+     * Loads the Exam first (so you see questions), THEN loads Rationales in the background.
      */
     async function loadSubjectData(subjectName) {
         const config = SubjectConfig[subjectName];
         if (!config) return;
 
         const statusDiv = document.getElementById('status');
-        statusDiv.innerHTML = '<div class="flex items-center justify-center"><div class="loader mr-2"></div>Downloading Exam & Rationales...</div>';
+        
+        // 1. FIRST: Load the Main Exam (The most important part)
+        statusDiv.innerHTML = '<div class="flex items-center justify-center"><div class="loader mr-2"></div>Loading Questions...</div>';
 
         try {
-            // A. Fetch and Process the MAIN EXAM PDF
-            console.log(`Fetching Exam: ${config.exam}`);
-const examResp = await fetch(config.exam + '?t=' + Date.now());
-            if (!examResp.ok) throw new Error(`Exam file not found: ${config.exam}`);
+            // Use a relative path (safest way to find files)
+            // We strip the domain to avoid "Staar-mastery" vs "staar-mastery" capitalization errors
+            const relativeExamPath = config.exam.replace('https://mrramirez123.github.io/Staar-mastery/', '');
+            
+            console.log(`Step 1: Fetching Exam from ${relativeExamPath}`);
+            const examResp = await fetch(relativeExamPath);
+            
+            if (!examResp.ok) throw new Error(`Could not find exam file: ${relativeExamPath}`);
             const examBuffer = await examResp.arrayBuffer();
             
             const subjectData = getCurrentSubjectData();
@@ -5211,19 +5218,27 @@ const examResp = await fetch(config.exam + '?t=' + Date.now());
             subjectData.teksToRcMap = await buildTeksToRcMap(subjectData.pdfDoc);
             subjectData.allQuestions = await parseAllPages();
 
-            // B. Fetch and Process RATIONALES (Loop through the list)
+            // *** CRITICAL STEP: Render the questions NOW! ***
+            // Don't wait for rationales. Show the user the questions immediately.
+            updateReviewAllButton();
+            renderDashboard();
+            populateCustomFilters();
+            statusDiv.innerHTML = `Loaded ${subjectData.allQuestions.length} questions. Fetching rationales...`;
+
+            // 2. SECOND: Load Rationales in the background
             if (config.rationales && config.rationales.length > 0) {
                 let totalMapped = 0;
                 
                 for (const ratConfig of config.rationales) {
-                    console.log(`Fetching Rationale for ${ratConfig.year}...`);
+                    const relativeRatPath = ratConfig.file.replace('https://mrramirez123.github.io/Staar-mastery/', '');
+                    console.log(`Step 2: Fetching Rationale for ${ratConfig.year}...`);
+                    
                     try {
-const ratResp = await fetch(ratConfig.file + '?t=' + Date.now());
+                        const ratResp = await fetch(relativeRatPath);
                         if (ratResp.ok) {
                             const ratBuffer = await ratResp.arrayBuffer();
                             const ratDoc = await pdfjsLib.getDocument(ratBuffer).promise;
                             
-                            // Extract text from all pages of the rationale PDF
                             let fullText = "";
                             for (let i = 1; i <= ratDoc.numPages; i++) {
                                 const page = await ratDoc.getPage(i);
@@ -5231,44 +5246,31 @@ const ratResp = await fetch(ratConfig.file + '?t=' + Date.now());
                                 fullText += textContent.items.map(item => item.str).join('\n') + "\n";
                             }
 
-                            // Parse and Apply (Using the HARDCODED year)
                             const rationales = parseRationalesText(fullText);
                             rationales.forEach(rat => {
-                                // Find question matching YEAR and NUMBER
                                 const targetQ = subjectData.allQuestions.find(q => 
                                     q.year === ratConfig.year && 
                                     (q.id.endsWith(`-Q${rat.number}`) || q.id.endsWith(`-Q0${rat.number}`))
                                 );
                                 if (targetQ) {
                                     targetQ.rationaleMap = rat.rationaleMap;
-                                    // Save page number for the "View Source" feature
                                     targetQ.rationalePage = 1; 
-                                    // (Optimisation: We could map exact pages here if needed later)
                                     totalMapped++;
                                 }
                             });
-                        } else {
-                            console.warn(`Rationale file missing: ${ratConfig.file}`);
                         }
                     } catch (e) {
-                        console.error(`Error loading rationale for ${ratConfig.year}:`, e);
+                        console.warn(`Skipping rationale for ${ratConfig.year} (File issue).`);
                     }
                 }
-                console.log(`Total Rationales Mapped: ${totalMapped}`);
+                console.log(`Background loading complete. Mapped ${totalMapped} rationales.`);
+                statusDiv.innerHTML = `Ready! Loaded ${subjectData.allQuestions.length} questions & rationales.`;
+                saveState(); // Save the rationales so we don't have to download them again next time
             }
 
-            // C. Finalize
-            let statusMessage = `Loaded ${subjectData.allQuestions.length} questions from cloud.`;
-            statusDiv.innerHTML = statusMessage;
-            
-            updateReviewAllButton();
-            renderDashboard();
-            populateCustomFilters();
-            saveState();
-
         } catch (error) {
-            console.error("Auto-load failed:", error);
-            statusDiv.innerHTML = `<span class="text-red-600 font-bold">Error: ${error.message}</span>`;
+            console.error("Auto-load crash:", error);
+            statusDiv.innerHTML = `<span class="text-red-600 font-bold">Failed to load: ${error.message}</span>`;
         }
     }
 
