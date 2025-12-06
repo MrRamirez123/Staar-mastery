@@ -5167,9 +5167,6 @@ function enterManualCropMode(event) {
                 });
             }
 
-// ==========================================
-    // START: AUTOMATION ENGINE (Multi-File Support)
-    // ==========================================
 
     // 1. Exam PDF Links
     const SubjectFiles = {
@@ -5326,15 +5323,7 @@ function enterManualCropMode(event) {
         });
     }
 
-    const currentData = getCurrentSubjectData();
-    const currentExamUrl = SubjectFiles[AppState.currentSubject];
-    const currentRationaleUrls = RationaleFiles[AppState.currentSubject];
 
-    if ((currentData.allQuestions.length === 0 || !currentData.pdfDoc) && currentExamUrl) {
-        loadRemotePDF(currentExamUrl, currentRationaleUrls);
-    } else {
-        renderAppForCurrentSubject();
-    }
     // Trigger Initial Load
     const currentData = getCurrentSubjectData();
     const currentExamUrl = SubjectFiles[AppState.currentSubject];
