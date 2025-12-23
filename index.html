@@ -3424,7 +3424,7 @@ async function renderProblem(question) {
 
         questionContent.innerHTML = ''; 
 
-        const canvases = await createQuestionCanvases(question, 8.0);
+        const canvases = await createQuestionCanvases(question, 3.0);
         canvases.forEach((canvas, index) => {
             if (index === 0 && canvases.length === 1) {
                 canvas.id = 'problem-canvas';
